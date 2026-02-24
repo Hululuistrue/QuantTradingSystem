@@ -1,0 +1,204 @@
+version: '3.8'
+
+services:
+  # PostgreSQL数据库
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: quant-postgres
+    environment:
+      POSTGRES_DB: quant_trading
+      POSTGRES_USER: quant_user
+      POSTGRES_PASSWORD: quant_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - quant-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quant_user -d quant_trading"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis缓存
+  redis:
+    image: redis:7-alpine
+    container_name: quant-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - quant-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 主API服务
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: quant-api
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: quant_trading
+      POSTGRES_USER: quant_user
+      POSTGRES_PASSWORD: quant_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      DEBUG: "true"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - quant-network
+    restart: unless-stopped
+
+  # Web界面服务
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: quant-web
+    environment:
+      API_URL: http://api:8000
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 8050
+    volumes:
+      - ./web:/app/web
+    ports:
+      - "8050:8050"
+    depends_on:
+      - api
+    networks:
+      - quant-network
+    restart: unless-stopped
+
+  # 数据收集服务
+  data-collector:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.data
+    container_name: quant-data-collector
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: quant_trading
+      POSTGRES_USER: quant_user
+      POSTGRES_PASSWORD: quant_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      YFINANCE_CACHE_DIR: /app/data/yfinance
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - quant-network
+    restart: unless-stopped
+    command: python -m data.collector
+
+  # 策略运行服务
+  strategy-runner:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.strategy
+    container_name: quant-strategy-runner
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: quant_trading
+      POSTGRES_USER: quant_user
+      POSTGRES_PASSWORD: quant_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./strategies:/app/strategies
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - quant-network
+    restart: unless-stopped
+    command: python -m strategies.runner
+
+  # Grafana监控
+  grafana:
+    image: grafana/grafana:latest
+    container_name: quant-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3000:3000"
+    networks:
+      - quant-network
+    restart: unless-stopped
+
+  # Prometheus监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: quant-prometheus
+    volumes:
+      - prometheus_data:/prometheus
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - quant-network
+    restart: unless-stopped
+
+  # Nginx反向代理 (可选)
+  nginx:
+    image: nginx:alpine
+    container_name: quant-nginx
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - api
+      - web
+      - grafana
+    networks:
+      - quant-network
+    restart: unless-stopped
+
+networks:
+  quant-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  grafana_data:
+  prometheus_data:

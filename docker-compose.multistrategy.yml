@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # PostgreSQL数据库
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: quant-postgres-multi
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quant_user
+      POSTGRES_PASSWORD: quant_password
+      POSTGRES_DB: quant_db
+    volumes:
+      - postgres_data_multi:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"  # 使用不同端口避免冲突
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quant_user -d quant_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis缓存
+  redis:
+    image: redis:7-alpine
+    container_name: quant-redis-multi
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data_multi:/data
+    ports:
+      - "6380:6379"  # 使用不同端口避免冲突
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API服务 - 多策略版本
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api.multistrategy
+    container_name: quant-api-multi
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://quant_user:quant_password@postgres:5432/quant_db
+      REDIS_URL: redis://redis:6379/0
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8001:8000"  # 使用不同端口避免冲突
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Web界面 - 更新为多策略版本
+  web:
+    image: nginx:alpine
+    container_name: quant-web-multi
+    restart: unless-stopped
+    depends_on:
+      - api
+    volumes:
+      - ./docker/nginx/nginx.multistrategy.conf:/etc/nginx/conf.d/default.conf
+      - ./web:/usr/share/nginx/html
+    ports:
+      - "8051:80"  # 使用不同端口避免冲突
+
+volumes:
+  postgres_data_multi:
+  redis_data_multi:

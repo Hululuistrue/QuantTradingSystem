@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Test - Main Page Check</title>
+    <script>
+        async function testMainPage() {
+            const result = document.getElementById('result');
+            try {
+                // Test 1: Fetch main page
+                const response = await fetch('http://76.13.108.193:8051/');
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const html = await response.text();
+                
+                // Test 2: Check for API port 8001
+                const has8001 = html.includes('8001');
+                const has8000 = html.includes('8000');
+                
+                result.innerHTML = `
+                    <h3>Test Results:</h3>
+                    <p>✅ Main page loaded successfully (${response.status})</p>
+                    <p>✅ Contains port 8001: ${has8001 ? 'YES' : 'NO'}</p>
+                    <p>❌ Contains port 8000: ${has8000 ? 'YES (BAD!)' : 'NO (GOOD!)'}</p>
+                    <p>Page size: ${html.length} bytes</p>
+                `;
+                
+                if (has8000) {
+                    result.innerHTML += '<p style="color: red;">⚠️ WARNING: Still contains old port 8000!</p>';
+                }
+                
+            } catch (error) {
+                result.innerHTML = `<p style="color: red;">❌ Error: ${error.message}</p>`;
+            }
+        }
+        
+        // Run test on page load
+        window.onload = testMainPage;
+    </script>
+</head>
+<body>
+    <h1>Main Page Fix Test</h1>
+    <p>Testing if main page has been fixed (port 8000 → 8001)</p>
+    <div id="result">Testing...</div>
+</body>
+</html>

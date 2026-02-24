@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "quant-trading-us"
+version = "0.1.0"
+description = "美股量化交易系统"
+authors = ["宝子 <baoz@openclaw.ai>"]
+readme = "README.md"
+packages = [{include = "quant_trading_us"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.104"
+uvicorn = {extras = ["standard"], version = "^0.24"}
+pandas = "^2.2"
+numpy = "^1.26"
+yfinance = "^0.2"
+ta-lib = "^0.4"
+backtrader = "^1.9"
+plotly = "^5.18"
+dash = "^2.15"
+sqlalchemy = "^2.0"
+psycopg2-binary = "^2.9"
+redis = "^5.0"
+loguru = "^0.7"
+python-dotenv = "^1.0"
+pydantic = "^2.5"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.12"
+flake8 = "^6.1"
+pytest = "^7.4"
+pytest-asyncio = "^0.21"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
